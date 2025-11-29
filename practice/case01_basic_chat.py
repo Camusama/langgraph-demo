@@ -7,7 +7,7 @@
 
 import json
 from langchain.messages import HumanMessage
-from practice.model_provider import get_openrouter_model
+from .model_provider import get_openrouter_model
 
 
 def main() -> None:
