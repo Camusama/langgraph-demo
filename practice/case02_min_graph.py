@@ -25,7 +25,9 @@ def echo_node(state: GraphState) -> GraphState:
     #         HumanMessage(content="(echo) " + state["messages"][-1].content)
     #     ]
     # }
-    raise NotImplementedError("取消上方注释后删除此行")
+    return {
+        "messages": [HumanMessage(content="(echo)" + state["messages"][-1].content)]
+    }
 
 
 def build_graph():
@@ -34,15 +36,22 @@ def build_graph():
     # builder.add_edge(START, "echo_node")
     # builder.add_edge("echo_node", END)
     # return builder.compile()
-    raise NotImplementedError("按照注释完成图构建后删除此行")
+    builder = StateGraph(GraphState)
+    builder.add_node("echo_node", echo_node)
+    builder.add_node("echo_node1", echo_node)
+    builder.add_node("echo_node2", echo_node)
+    builder.add_edge(START, "echo_node")
+    builder.add_edge("echo_node", "echo_node1")
+    builder.add_edge("echo_node1", "echo_node2")
+    builder.add_edge("echo_node2", END)
+    return builder.compile()
 
 
 def main() -> None:
-    # agent = build_graph()
-    # result = agent.invoke({"messages": [HumanMessage(content="你好")]})
-    # for m in result["messages"]:
-    #     print(m)
-    print("按照注释完成 echo_node、build_graph，再运行本脚本。")
+    agent = build_graph()
+    result = agent.invoke({"messages": [HumanMessage(content="你好")]})
+    for m in result["messages"]:
+        print(m)
 
 
 if __name__ == "__main__":
