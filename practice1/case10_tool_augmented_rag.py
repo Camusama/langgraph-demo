@@ -1,8 +1,13 @@
 """案例 10：RAG + 内置工具（逐步开启版）。"""
 
 from __future__ import annotations
+
 import operator
+import os
+from pathlib import Path
 from typing import Annotated, Dict, List, TypedDict
+
+from dotenv import load_dotenv
 from langchain_core.messages import (
     AIMessage,
     AnyMessage,
@@ -10,12 +15,16 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
-from langgraph.graph import END, StateGraph
+from langgraph.graph import END, START, StateGraph
 from langchain_community.tools import TavilySearchResults
-from langchain_community.tools.python.tool import PythonREPLTool
+from langchain_experimental.tools.python.tool import PythonREPLTool
 from langchain_community.tools.requests.tool import RequestsGetTool
+from langchain_community.utilities.requests import RequestsWrapper
 from practice.model_provider import get_openrouter_model
 from practice1.common import format_docs, load_vectorstore
+
+# 确保读取 OPENROUTER_API_KEY / TAVILY_API_KEY 等环境变量
+load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
 
 
 def replace_list(_: List, right: List) -> List:
@@ -30,17 +39,27 @@ class ToolRAGState(TypedDict):
 
 
 def build_tool_rag_agent(retriever, *, temperature: float = 0):
+    # RequestsWrapper 当前不接受 allow_dangerous_requests 配置，危险开关放在 RequestsGetTool 上
+    requests_wrapper = RequestsWrapper()
+
     tools = [
         TavilySearchResults(max_results=3),
         PythonREPLTool(),
-        RequestsGetTool(),
+        # RequestsGetTool 需显式传入 wrapper，并开启 allow_dangerous_requests 以便示例运行
+        RequestsGetTool(
+            requests_wrapper=requests_wrapper,
+            allow_dangerous_requests=True,
+        ),
     ]
     tool_map: Dict[str, object] = {tool.name: tool for tool in tools}
     llm = get_openrouter_model(temperature=temperature).bind_tools(tools)
 
     def retrieve_node(state: ToolRAGState):
         query = state.get("query") or _latest_user_content(state["messages"])
-        docs = retriever.get_relevant_documents(query)
+        try:
+            docs = retriever.invoke(query)
+        except AttributeError:
+            docs = retriever.get_relevant_documents(query)
         return {"context": docs, "query": query}
 
     def llm_node(state: ToolRAGState):
@@ -87,7 +106,7 @@ def build_tool_rag_agent(retriever, *, temperature: float = 0):
     graph.add_node("llm", llm_node)
     graph.add_node("tools", tool_node)
 
-    graph.add_edge("START", "retrieve")
+    graph.add_edge(START, "retrieve")
     graph.add_edge("retrieve", "llm")
     graph.add_conditional_edges("llm", should_continue, {"tools": "tools", "end": END})
     graph.add_edge("tools", "llm")
