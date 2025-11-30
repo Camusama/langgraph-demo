@@ -19,7 +19,23 @@ from langgraph.graph import END, START, StateGraph
 from practice.model_provider import get_openrouter_model
 
 
+# 简单打印当前消息列表，便于观察节点输入/输出。
+def debug_messages(tag: str, messages: list[AnyMessage]) -> None:
+    print(
+        f"[{tag}]",
+        [
+            (
+                msg.__class__.__name__,
+                getattr(msg, "content", None),
+                getattr(msg, "tool_calls", None),
+            )
+            for msg in messages
+        ],
+    )
+
+
 # -------- 1) 定义工具 --------
+
 
 @tool
 def add(a: int, b: int) -> int:
@@ -45,6 +61,7 @@ TOOLS_BY_NAME = {t.name: t for t in TOOLS}
 
 # -------- 2) 定义 State --------
 
+
 class AgentState(TypedDict):
     messages: Annotated[list[AnyMessage], operator.add]
     llm_calls: int
@@ -52,68 +69,76 @@ class AgentState(TypedDict):
 
 # -------- 3) 节点：模型调用 --------
 
+
 def llm_call(state: AgentState) -> AgentState:
     """模型节点：决定是否要调用工具。"""
-    # model = get_openrouter_model(temperature=0)
-    # model_with_tools = model.bind_tools(TOOLS)
+    model = get_openrouter_model(temperature=0)
+    model_with_tools = model.bind_tools(TOOLS)
     #
-    # system_prompt = SystemMessage(
-    #     content="你是一个会使用 add/multiply/divide 的算术助手。"
-    # )
-    # ai_reply = model_with_tools.invoke([system_prompt] + state["messages"])
+    system_prompt = SystemMessage(
+        content="你是一个会使用 add/multiply/divide 的算术助手。"
+    )
+    debug_messages("llm_call:input", state["messages"])
+    ai_reply = model_with_tools.invoke([system_prompt] + state["messages"])
+    debug_messages("llm_call:output", [ai_reply])
     #
-    # return {
-    #     "messages": [ai_reply],
-    #     "llm_calls": state.get("llm_calls", 0) + 1,
-    # }
-    raise NotImplementedError("完成模型调用后删除此行")
+    return {
+        "messages": [ai_reply],
+        "llm_calls": state.get("llm_calls", 0) + 1,
+    }
 
 
 # -------- 4) 节点：工具执行 --------
 
+
 def tool_node(state: AgentState) -> AgentState:
     """工具节点：执行上一步的 tool_calls 并返回 ToolMessage。"""
-    # outputs = []
-    # for tc in state["messages"][-1].tool_calls:
-    #     tool_fn = TOOLS_BY_NAME[tc["name"]]
-    #     observation = tool_fn.invoke(tc["args"])
-    #     outputs.append(ToolMessage(content=observation, tool_call_id=tc["id"]))
-    # return {"messages": outputs}
-    raise NotImplementedError("完成工具执行后删除此行")
+    debug_messages("tool_node:input", state["messages"])
+    outputs = []
+    for tc in state["messages"][-1].tool_calls:
+        tool_fn = TOOLS_BY_NAME[tc["name"]]
+        observation = tool_fn.invoke(tc["args"])
+        outputs.append(ToolMessage(content=observation, tool_call_id=tc["id"]))
+    debug_messages("tool_node:output", outputs)
+    return {"messages": outputs}
 
 
 # -------- 5) 条件边：决定下一步 --------
 
+
 def should_continue(state: AgentState) -> Literal["tool_node", END]:
     """如果上一条消息包含 tool_calls，就去 tool_node，否则结束。"""
-    # last_message = state["messages"][-1]
-    # if last_message.tool_calls:
-    #     return "tool_node"
-    # return END
-    raise NotImplementedError("完成条件函数后删除此行")
+    last_message = state["messages"][-1]
+    if last_message.tool_calls:
+        print(f"[should_continue] tool_calls: {last_message.tool_calls}")
+        return "tool_node"
+    print("[should_continue] no tool_calls -> END")
+    return END
 
 
 # -------- 6) 组装图并运行 --------
 
+
 def build_agent():
     """创建图：START -> llm_call -> (tool_node -> llm_call) / END"""
-    # graph = StateGraph(AgentState)
-    # graph.add_node("llm_call", llm_call)
-    # graph.add_node("tool_node", tool_node)
+    graph = StateGraph(AgentState)
+    graph.add_node("llm_call", llm_call)
+    graph.add_node("tool_node", tool_node)
     #
-    # graph.add_edge(START, "llm_call")
-    # graph.add_conditional_edges("llm_call", should_continue, ["tool_node", END])
-    # graph.add_edge("tool_node", "llm_call")
+    graph.add_edge(START, "llm_call")
+    graph.add_conditional_edges("llm_call", should_continue, ["tool_node", END])
+    graph.add_edge("tool_node", "llm_call")
     #
-    # return graph.compile()
-    raise NotImplementedError("完成图构建后删除此行")
+    return graph.compile()
 
 
 def main() -> None:
-    # agent = build_agent()
-    # result = agent.invoke({"messages": [HumanMessage(content="请计算 3*4+5")], "llm_calls": 0})
-    # for m in result["messages"]:
-    #     m.pretty_print()
+    agent = build_agent()
+    result = agent.invoke(
+        {"messages": [HumanMessage(content="请计算 3*4+5")], "llm_calls": 0}
+    )
+    for m in result["messages"]:
+        m.pretty_print()
     print("按照注释完成后运行，观察模型-工具循环。")
 
 
