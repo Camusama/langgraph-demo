@@ -16,7 +16,7 @@ except ImportError:  # pragma: no cover - 向后兼容旧版本
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_community.document_loaders import TextLoader
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
 
 BASE_DIR = Path(__file__).resolve().parent
