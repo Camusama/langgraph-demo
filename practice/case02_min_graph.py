@@ -11,6 +11,7 @@ from typing_extensions import Annotated, TypedDict
 
 from langchain.messages import AnyMessage, HumanMessage
 from langgraph.graph import END, START, StateGraph
+import json
 
 
 class GraphState(TypedDict):
@@ -18,13 +19,17 @@ class GraphState(TypedDict):
     messages: Annotated[list[AnyMessage], operator.add]
 
 
-def echo_node(state: GraphState) -> GraphState:
+def echo_node(state: GraphState, *args, **kwargs) -> GraphState:
     """示例节点：原样返回或附加固定前缀。"""
     # return {
     #     "messages": [
     #         HumanMessage(content="(echo) " + state["messages"][-1].content)
     #     ]
     # }
+    # 这里的 state["messages"] 包含全部历史
+    # reply = llm.invoke(state["messages"])
+    print([m.model_dump() for m in state["messages"]])
+    # 只返回新增消息，旧的会由 reducer 保留
     return {
         "messages": [HumanMessage(content="(echo)" + state["messages"][-1].content)]
     }
