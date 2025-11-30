@@ -1,162 +1,81 @@
-"""案例 09：带持久化的 RAG（逐步开启版）。"""
+"""案例：配置checkpointer实现真正的跨轮状态持久化"""
 
-# from __future__ import annotations
-# import operator
-# from typing import Annotated, List, Optional, TypedDict
-# from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
-# from langchain_core.prompts import ChatPromptTemplate
-# from langgraph.checkpoint.memory import MemorySaver
-# from langgraph.graph import END, StateGraph
-# from practice.model_provider import get_openrouter_model
-# from practice1.common import format_docs, load_vectorstore
+import operator
+from typing_extensions import Annotated, TypedDict
+
+from langchain.messages import AnyMessage, HumanMessage, SystemMessage, AIMessage
+from langgraph.graph import END, START, StateGraph
+from langgraph.checkpoint.memory import MemorySaver  # 导入内存检查点
+from practice.model_provider import get_openrouter_model
 
 
-# def merge_messages(_: List[AnyMessage], right: List[AnyMessage]) -> List[AnyMessage]:
-#     """替换式合并，便于在摘要阶段丢弃旧消息。"""
-#     return right
-#
-#
-# class MemoryRAGState(TypedDict):
-#     messages: Annotated[List[AnyMessage], merge_messages]
-#     context: Annotated[List, merge_messages]
-#     query: str
-#     turns: Annotated[int, operator.add]
-#     summary: Optional[str]
-#
-#
-# SUMMARY_THRESHOLD = 6  # 超过多少条消息开始摘要
-#
-#
-# def build_memory_rag_agent(retriever, *, temperature: float = 0):
-#     """图结构：START -> maybe_summarize -> retrieve -> answer -> END。"""
-#     qa_prompt = ChatPromptTemplate.from_messages(
-#         [
-#             (
-#                 "system",
-#                 (
-#                     "你是 RAG 助理，使用中文，回答时附上引用 [source1]。\n"
-#                     "对话摘要（可能为空）：{summary_text}\n"
-#                     "检索上下文：\n{context_text}\n"
-#                     "若上下文为空，请提示未命中知识库，可以改为联网搜索。"
-#                 ),
-#             ),
-#             ("placeholder", "{messages}"),
-#         ]
-#     )
-#
-#     summarize_prompt = ChatPromptTemplate.from_messages(
-#         [
-#             (
-#                 "system",
-#                 "请用 100 字以内总结以下对话要点，中文输出，不要添加新信息：",
-#             ),
-#             ("human", "{history_text}"),
-#         ]
-#     )
-#
-#     llm = get_openrouter_model(temperature=temperature)
-#     qa_chain = qa_prompt | llm
-#     summarizer = get_openrouter_model(temperature=0)
-#
-#     def route_summary(state: MemoryRAGState):
-#         return "summarize" if len(state["messages"]) > SUMMARY_THRESHOLD else "skip"
-#
-#     def router_node(state: MemoryRAGState):
-#         return state
-#
-#     def summarize_node(state: MemoryRAGState):
-#         # 保留最后一条用户问题，其余合并成摘要。
-#         history_messages = state["messages"][:-1]
-#         if not history_messages:
-#             return {"summary": state.get("summary"), "messages": state["messages"]}
-#
-#         history_text = "\n".join(
-#             f"{msg.__class__.__name__}: {msg.content}" for msg in history_messages
-#         )
-#         summary_msg = summarizer.invoke(
-#             summarize_prompt.format_prompt(history_text=history_text).to_messages()
-#         )
-#         summary_text = summary_msg.content
-#
-#         compressed_messages: List[AnyMessage] = [
-#             SystemMessage(content=f"对话摘要：{summary_text}"),
-#             state["messages"][-1],
-#         ]
-#         return {"summary": summary_text, "messages": compressed_messages}
-#
-#     def retrieve_node(state: MemoryRAGState):
-#         query = state.get("query") or _latest_user_content(state["messages"])
-#         docs = retriever.get_relevant_documents(query)
-#         return {"context": docs, "query": query}
-#
-#     def answer_node(state: MemoryRAGState):
-#         context_text = format_docs(state.get("context", []))
-#         summary_text = state.get("summary") or "（暂无摘要）"
-#         ai_msg = qa_chain.invoke(
-#             {
-#                 "summary_text": summary_text,
-#                 "context_text": context_text,
-#                 "messages": state["messages"],
-#             }
-#         )
-#         new_messages = state["messages"] + [ai_msg]
-#         return {"messages": new_messages, "turns": 1}
-#
-#     graph = StateGraph(MemoryRAGState)
-#     graph.add_node("router", router_node)
-#     graph.add_node("summarize", summarize_node)
-#     graph.add_node("retrieve", retrieve_node)
-#     graph.add_node("answer", answer_node)
-#
-#     graph.add_edge("START", "router")
-#     graph.add_conditional_edges(
-#         "router",
-#         route_summary,
-#         {"summarize": "summarize", "skip": "retrieve"},
-#     )
-#     graph.add_edge("summarize", "retrieve")
-#     graph.add_edge("retrieve", "answer")
-#     graph.add_edge("answer", END)
-#
-#     memory = MemorySaver()
-#     return graph.compile(checkpointer=memory)
-#
-#
-# def _latest_user_content(messages: List[AnyMessage]) -> str:
-#     for msg in reversed(messages):
-#         if isinstance(msg, HumanMessage):
-#             return msg.content
-#     raise ValueError("state['messages'] 需要至少一条 HumanMessage")
-#
-#
-# def main() -> None:
-#     # STEP 1: 准备 retriever
-#     # store = load_vectorstore(persist=True)
-#     # retriever = store.as_retriever(search_kwargs={"k": 3})
-#
-#     # STEP 2: 构建带 checkpoint 的 Agent
-#     # agent = build_memory_rag_agent(retriever)
-#
-#     # STEP 3: 设置 thread_id 体验跨轮持久化
-#     # thread_config = {"configurable": {"thread_id": "memory-demo"}}
-#
-#     # STEP 4: 调用示例
-#     # state = agent.invoke(
-#     #     {"messages": [HumanMessage(content="帮我总结下 LangGraph 的状态概念。")], "turns": 0},
-#     #     config=thread_config,
-#     # )
-#     # print("Turn 1:", state["messages"][-1].content)
-#     #
-#     # state = agent.invoke(
-#     #     {
-#     #         "messages": [HumanMessage(content="再说说工具调用和 MemorySaver 的关系。")],
-#     #         "turns": state["turns"],
-#     #         "summary": state.get("summary"),
-#     #     },
-#     #     config=thread_config,
-#     # )
-#     # print("Turn 2:", state["messages"][-1].content)
-#
-# if __name__ == "__main__":
-#     # main()
-#     print("逐步取消注释 STEP 1-4 后运行 main()。")
+# 定义状态
+class MemoryState(TypedDict):
+    messages: Annotated[list[AnyMessage], operator.add]
+    turns: Annotated[int, operator.add]
+
+
+# 定义LLM节点
+def llm_node(state: MemoryState) -> MemoryState:
+    model = get_openrouter_model(temperature=0)
+    system_prompt = SystemMessage(
+        content=f"你正在对话，第 {state['turns']} 轮。请简短回答。"
+    )
+    ai_reply = model.invoke([system_prompt] + state["messages"])
+    return {
+        "messages": [ai_reply],
+        "turns": 1,
+    }
+
+
+# 构建图：核心是传入checkpointer实例（内存持久化）
+def build_graph():
+    # 1. 初始化检查点（内存存储，也可替换为Redis/SQL检查点）
+    checkpointer = MemorySaver()
+    # 2. 创建graph时传入checkpointer
+    graph = StateGraph(MemoryState)
+    graph.add_node("llm_node", llm_node)
+    graph.add_edge(START, "llm_node")
+    graph.add_edge("llm_node", END)
+    # 3. 编译graph时绑定checkpointer
+    return graph.compile(checkpointer=checkpointer)
+
+
+def main() -> None:
+    # 初始化Agent（已绑定checkpointer）
+    agent = build_graph()
+
+    # 定义会话配置：configurable + thread_id
+    thread_config = {"configurable": {"thread_id": "memory-demo"}}
+
+    # 第一轮调用：初始化状态，会被checkpointer持久化
+    print("=== 第一轮对话 ===")
+    state = agent.invoke(
+        {
+            "messages": [HumanMessage(content="帮我总结下 LangGraph 的状态概念。")],
+            "turns": 0,
+        },
+        config=thread_config,
+    )
+    for msg in state["messages"]:
+        if isinstance(msg, AIMessage):
+            print(f"AI：{msg.content}")
+    print(f"当前轮次：{state['turns']}\n")
+
+    # 第二轮调用：无需手动传递上一轮状态，checkpointer会通过thread_id自动加载
+    print("=== 第二轮对话 ===")
+    state = agent.invoke(
+        {
+            "messages": [HumanMessage(content="再详细说说状态的合并规则。")],
+            # 无需传递turns，checkpointer会加载上一轮的turns并自动累加
+        },
+        config=thread_config,
+    )
+    for msg in state["messages"]:
+        if isinstance(msg, AIMessage):
+            print(f"AI：{msg.content}")
+    print(f"当前轮次：{state['turns']}\n")
+
+
+if __name__ == "__main__":
+    main()
