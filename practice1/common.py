@@ -6,7 +6,13 @@ import os
 from pathlib import Path
 from typing import Iterable, List, Sequence
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from dotenv import load_dotenv
+
+try:
+    # LangChain >=0.3 分拆为独立包
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+except ImportError:  # pragma: no cover - 向后兼容旧版本
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_community.document_loaders import TextLoader
@@ -68,9 +74,24 @@ def load_documents() -> List[Document]:
 
 
 def get_embeddings() -> Embeddings:
-    """返回默认的 OpenAIEmbeddings，需设置 OPENAI_API_KEY。"""
+    """返回基于 OpenRouter 的 OpenAIEmbeddings，复用 OPENROUTER_API_KEY/BaseURL。"""
+    # 优先从仓库根目录 .env 加载，变量与 practice/model_provider 对齐
+    env_path = BASE_DIR.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path, override=False)
+
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY 未设置，无法初始化 OpenRouter 嵌入模型。")
+
+    base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
     model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-    return OpenAIEmbeddings(model=model)
+
+    return OpenAIEmbeddings(
+        model=model,
+        api_key=api_key,
+        base_url=base_url,
+    )
 
 
 def build_vectorstore(*, persist: bool = True) -> Chroma:
