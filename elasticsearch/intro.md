@@ -32,7 +32,7 @@ uv add elasticsearch
 
 ## 3) 最小可运行示例
 
-保存为 `practice1/elasticsearch_quickstart.py`：
+保存为 `elasticsearch/practice1/elasticsearch_quickstart.py`：
 
 ```python
 from datetime import datetime
@@ -82,7 +82,7 @@ for hit in resp["hits"]["hits"]:
 运行：
 
 ```bash
-uv run python practice1/elasticsearch_quickstart.py
+uv run python elasticsearch/practice1/elasticsearch_quickstart.py
 ```
 
 ## 4) 常见操作模板
@@ -131,3 +131,4 @@ print(resp["aggregations"]["price_stats"])
 - **刷新机制**：写入后默认有刷新间隔，测试时可手动 `refresh`。
 - **keyword vs text**：`text` 适合全文搜索，`keyword` 适合精确过滤/聚合。
 - **版本兼容**：客户端版本应与 ES 主版本一致（比如 ES 8.x 对应客户端 8.x）。
+- **401 认证失败**：ES 8 默认开启安全，需用 `ES_USER`/`ES_PASSWORD` 或 `ES_API_KEY` 连接。
