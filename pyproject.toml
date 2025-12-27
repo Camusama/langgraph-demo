@@ -19,4 +19,5 @@ dependencies = [
     "tavily-python>=0.4.0",
     "python-dotenv>=1.0.1",
     "langsmith>=0.1.129",
+    "stomp-py>=8.2.0",
 ]
